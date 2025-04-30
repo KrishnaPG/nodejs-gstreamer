@@ -1,0 +1,10 @@
+*.o
+*.a
+.so
+worker
+/build
+/cmake-build
+.DS_Store
+*.swp
+.log
+/tmp/gst_shm
