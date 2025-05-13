@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video WebSocket Stream</title>
+</head>
+<body>
+    <video id="myVideo" width="320" height="240" autoplay muted></video>
+    <button id="startButton">Start Stream</button>
+    <button id="stopButton">Stop Stream</button>
+
+    <video id="processed" autoplay></video>
+
+    <script>
+        const videoElement = document.getElementById("myVideo");
+        const startButton = document.getElementById("startButton");
+        const stopButton = document.getElementById("stopButton");
+        const processedVideo = document.getElementById("processed");
+
+        let mediaRecorder;
+        let socket;
+        let streamActive = false;
+        let recordedChunks = [];
+        let mediaSource;
+        let sourceBuffer;
+
+        async function startVideo() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                videoElement.srcObject = stream;
+                return stream;
+            } catch (error) {
+                console.error("Error accessing media devices.", error);
+                throw error;
+            }
+        }
+
+        function initMediaSource() {
+            if (mediaSource) {
+                mediaSource.endOfStream();
+                URL.revokeObjectURL(processedVideo.src);
+            }
+            
+            mediaSource = new MediaSource();
+            processedVideo.src = URL.createObjectURL(mediaSource);
+            
+            return new Promise((resolve) => {
+                mediaSource.addEventListener('sourceopen', () => {
+                    sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp8"');
+                    sourceBuffer.mode = 'sequence';
+                    resolve();
+                });
+            });
+        }
+
+        async function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:8080");
+
+            socket.addEventListener("open", () => {
+                console.log("Connected to WebSocket server");
+            });
+
+            socket.addEventListener("close", (event) => {
+                console.log("Disconnected from WebSocket server", event);
+                streamActive = false;
+            });
+
+            socket.addEventListener("error", (error) => {
+                console.error("WebSocket error:", error);
+                streamActive = false;
+            });
+
+            socket.onmessage = async (e) => {
+                try {
+                    if (!sourceBuffer || sourceBuffer.updating) {
+                        console.log("Buffer not ready, queuing chunk");
+                        await new Promise(resolve => {
+                            const check = () => {
+                                if (!sourceBuffer.updating) {
+                                    resolve();
+                                } else {
+                                    setTimeout(check, 50);
+                                }
+                            };
+                            check();
+                        });
+                    }
+                    
+                    const data = new Uint8Array(e.data);
+                    sourceBuffer.appendBuffer(data);
+                } catch (error) {
+                    console.error("Error appending buffer:", error);
+                }
+            };
+        }
+
+        async function startStreaming() {
+            try {
+                const stream = await startVideo();
+                await initMediaSource();
+                await connectWebSocket();
+
+                const options = { mimeType: "video/webm; codecs=vp8" };
+                mediaRecorder = new MediaRecorder(stream, options);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+                        socket.send(event.data);
+                    }
+                };
+
+                mediaRecorder.onerror = (event) => {
+                    console.error("MediaRecorder Error:", event.error);
+                };
+
+                // Use larger timeslice for more complete chunks
+                mediaRecorder.start(500); // 500ms chunks
+                streamActive = true;
+            } catch (error) {
+                console.error("Error starting stream:", error);
+            }
+        }
+
+        function stopStreaming() {
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+                streamActive = false;
+            }
+
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.close();
+            }
+
+            if (videoElement.srcObject) {
+                const tracks = videoElement.srcObject.getTracks();
+                tracks.forEach((track) => track.stop());
+                videoElement.srcObject = null;
+            }
+        }
+
+        startButton.addEventListener("click", () => {
+            if (!streamActive) startStreaming();
+        });
+
+        stopButton.addEventListener("click", () => {
+            stopStreaming();
+        });
+    </script>
+</body>
+</html>

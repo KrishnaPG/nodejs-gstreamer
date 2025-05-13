@@ -13,13 +13,50 @@ ZmqHandler::ZmqHandler(const std::string& endpoint, const std::string& topic, Rp
     publisher_.bind("tcp://*:5555");
 }
 
-ZmqHandler::~ZmqHandler() {
-    running_ = false;
-    if (worker_thread_.joinable()) worker_thread_.join();
-}
+ZmqHandler::~ZmqHandler() = default;
 
 void ZmqHandler::start() {
-    worker_thread_ = std::thread(&ZmqHandler::run, this);
+    GSocket* gsocket = g_socket_new_from_fd(zmq_getsockopt_ptr(subscriber_.get(), ZMQ_FD, NULL), NULL);
+    GIOChannel* io_channel = g_io_channel_unix_new(g_socket_get_fd(gsocket));
+
+    g_io_channel_set_flags(io_channel, G_IO_FLAG_NONBLOCK, nullptr);
+    g_io_add_watch(io_channel, G_IO_IN, on_zmq_event, this, nullptr);
+
+    g_object_unref(io_channel);
+    g_object_unref(gsocket);
+}
+
+gboolean ZmqHandler::on_zmq_event(GSocket* socket, GIOCondition condition, gpointer user_data)
+{
+    auto handler = static_cast<ZmqHandler*>(user_data);
+
+    zmq::message_t topic_msg, data_msg;
+    if (!handler->subscriber_.recv(topic_msg, zmq::recv_flags::none)) return G_SOURCE_CONTINUE;
+    if (!handler->subscriber_.recv(data_msg, zmq::recv_flags::none)) return G_SOURCE_CONTINUE;
+
+    std::string json_str(static_cast<const char*>(data_msg.data()), data_msg.size());
+    json_object* root = json_tokener_parse(json_str.c_str());
+
+    if (root)
+    {
+        json_object* params = json_object_object_get(root, "params");
+        if (params)
+        {
+            handler->callback_(params);
+        }
+        json_object_put(root);
+    }
+
+    return G_SOURCE_CONTINUE;
+}
+
+void ZmqHandler::publish_response(const std::string& topic, const std::string& payload)
+{
+    zmq::message_t topic_msg(topic.data(), topic.size());
+    zmq::message_t data_msg(payload.data(), payload.size());
+
+    publisher_.send(topic_msg, zmq::send_flags::sndmore);
+    publisher_.send(data_msg, zmq::send_flags::none);
 }
 
 void ZmqHandler::publish_log(const std::string& level, const std::string& msg) {

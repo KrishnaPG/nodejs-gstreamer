@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JPEG Frame WebSocket Stream</title>
+</head>
+<body>
+    <video id="myVideo" width="320" height="240" autoplay muted></video>
+    <button id="startButton">Start Stream</button>
+    <button id="stopButton">Stop Stream</button>
+
+    <img id="processed" width="320" height="240">
+
+    <script>
+        const videoElement = document.getElementById("myVideo");
+        const startButton = document.getElementById("startButton");
+        const stopButton = document.getElementById("stopButton");
+        const processedImage = document.getElementById("processed");
+
+        let socket;
+        let streamActive = false;
+        let stream;
+        let frameInterval;
+        const format = 'image/jpeg';  // or use 'image/png'
+
+        async function startVideo() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                videoElement.srcObject = stream;
+                return stream;
+            } catch (error) {
+                console.error("Error accessing media devices.", error);
+                throw error;
+            }
+        }
+
+        async function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:8080");
+
+            socket.onopen = () => console.log("WebSocket connected");
+            socket.onclose = () => console.log("WebSocket disconnected");
+            socket.onerror = (err) => console.error("WebSocket error:", err);
+
+            socket.onmessage = (e) => {
+                // Create blob from received JPEG data
+                const blob = new Blob([e.data], { type: format });
+                processedImage.src = URL.createObjectURL(blob);
+            };
+        }
+
+        function captureFrame() {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(videoElement, 0, 0);
+            
+            canvas.toBlob((blob) => {
+                if (socket.readyState === WebSocket.OPEN) {
+                    blob.arrayBuffer().then(buf => {
+                        socket.send(buf);
+                    });
+                }
+            }, format, 0.8); // JPEG at 80% quality
+        }
+
+        async function startStreaming() {
+            try {
+                await startVideo();
+                await connectWebSocket();
+                
+                // Capture frames at 15fps (66ms interval)
+                frameInterval = setInterval(captureFrame, 66);
+                streamActive = true;
+            } catch (error) {
+                console.error("Error starting stream:", error);
+            }
+        }
+
+        function stopStreaming() {
+            clearInterval(frameInterval);
+            streamActive = false;
+            
+            if (socket) socket.close();
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
+        }
+
+        startButton.addEventListener("click", startStreaming);
+        stopButton.addEventListener("click", stopStreaming);
+    </script>
+</body>
+</html>
