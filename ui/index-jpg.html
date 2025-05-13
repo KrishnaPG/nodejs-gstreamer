@@ -68,11 +68,17 @@
             // Capture frame
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            // Core capture pipeline (no branches)
+            // send to backend
             canvas.convertToBlob(encoderOpts).then(blob => {
                 state.socket?.send(blob);
                 state.frameCount++;
             }).catch(console.error);
+
+            // alternative to canvas.convertToBlob() for direct RGBA access without JPG/PNG
+            // {
+            //     const imageData = ctx.getImageData(0, 0, 640, 480).data;
+            //     state.socket?.send(imageData.buffer); // Raw RGBA
+            // }
         };
 
         // Control functions
