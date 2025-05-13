@@ -1,94 +1,117 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>JPEG Frame WebSocket Stream</title>
+    <title>Branchess Frame Capture</title>
+    <style>
+        body { margin: 0; padding: 20px; }
+        #container { display: flex; gap: 20px; }
+        video, img { border: 1px solid #ccc; background: #000; }
+        button { padding: 10px 20px; margin: 0 10px 10px 0; }
+    </style>
 </head>
 <body>
-    <video id="myVideo" width="320" height="240" autoplay muted></video>
+    <div id="container">
+        <video id="myVideo" width="320" height="240" autoplay muted></video>
+        <img id="processed" width="320" height="240">
+    </div>
     <button id="startButton">Start Stream</button>
     <button id="stopButton">Stop Stream</button>
 
-    <img id="processed" width="320" height="240">
-
     <script>
-        const videoElement = document.getElementById("myVideo");
-        const startButton = document.getElementById("startButton");
-        const stopButton = document.getElementById("stopButton");
-        const processedImage = document.getElementById("processed");
+        // DOM Elements
+        const video = document.getElementById('myVideo');
+        const processedImg = document.getElementById('processed');
+        const startBtn = document.getElementById('startButton');
+        const stopBtn = document.getElementById('stopButton');
 
-        let socket;
-        let streamActive = false;
-        let stream;
-        let frameInterval;
-        const format = 'image/jpeg';  // or use 'image/png'
+        // State tracking
+        const state = {
+            active: false,
+            wsConnected: false,
+            frameRequest: 0,
+            socket: null,
+            stream: null,
+            lastFrameTime: 0,
+            frameCount: 0
+        };
 
-        async function startVideo() {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                videoElement.srcObject = stream;
-                return stream;
-            } catch (error) {
-                console.error("Error accessing media devices.", error);
-                throw error;
+        const formatType = 'image/jpeg'; // image/png
+        const targetFPS = 30;
+        const fpsMS = 1000/targetFPS;  // 33.33ms = ~30fps
+        const captureWidth = 320, captureHeight = 240;
+
+        // Pre-allocated resources
+        const canvas = new OffscreenCanvas(captureWidth, captureHeight);
+        const ctx = canvas.getContext('2d', { willReadFrequently: false });
+        const encoderOpts = { type: formatType, quality: 0.85 };
+
+        // WebSocket handler
+        const wsHandler = {
+            onopen: () => { state.wsConnected = true; },
+            onclose: () => { state.wsConnected = false; },
+            onmessage: e => {
+                processedImg.src = URL.createObjectURL(new Blob([e.data], { type: formatType }));
             }
-        }
+        };
 
-        async function connectWebSocket() {
-            socket = new WebSocket("ws://localhost:8080");
-
-            socket.onopen = () => console.log("WebSocket connected");
-            socket.onclose = () => console.log("WebSocket disconnected");
-            socket.onerror = (err) => console.error("WebSocket error:", err);
-
-            socket.onmessage = (e) => {
-                // Create blob from received JPEG data
-                const blob = new Blob([e.data], { type: format });
-                processedImage.src = URL.createObjectURL(blob);
-            };
-        }
-
-        function captureFrame() {
-            const canvas = document.createElement('canvas');
-            canvas.width = videoElement.videoWidth;
-            canvas.height = videoElement.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(videoElement, 0, 0);
+        // Frame processing pipeline
+        const processFrame = (timestamp) => {
+            state.frameRequest = requestAnimationFrame(processFrame);
             
-            canvas.toBlob((blob) => {
-                if (socket.readyState === WebSocket.OPEN) {
-                    blob.arrayBuffer().then(buf => {
-                        socket.send(buf);
-                    });
-                }
-            }, format, 0.8); // JPEG at 80% quality
-        }
+            // Throttle to ~30fps without branching
+            const elapsed = timestamp - state.lastFrameTime;
+            
+            // Skip processing if not ready
+            if (elapsed < fpsMS) { return;}
 
-        async function startStreaming() {
+            state.lastFrameTime = timestamp;
+            // Capture frame
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Core capture pipeline (no branches)
+            canvas.convertToBlob(encoderOpts).then(blob => {
+                state.socket?.send(blob);
+                state.frameCount++;
+            }).catch(console.error);
+        };
+
+        // Control functions
+        const startStream = async () => {
+            if (state.active) return;
+            
             try {
-                await startVideo();
-                await connectWebSocket();
+                state.stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: captureWidth, height: captureHeight, frameRate: targetFPS },
+                    audio: false
+                });
+                video.srcObject = state.stream;
                 
-                // Capture frames at 15fps (66ms interval)
-                frameInterval = setInterval(captureFrame, 66);
-                streamActive = true;
-            } catch (error) {
-                console.error("Error starting stream:", error);
+                state.socket = new WebSocket('ws://localhost:8080');
+                Object.assign(state.socket, wsHandler);
+                
+                state.active = true;
+                state.lastFrameTime = performance.now();
+                state.frameRequest = requestAnimationFrame(processFrame);
+            } catch (err) {
+                console.error('Stream start failed:', err);
+                stopStream();
             }
-        }
+        };
 
-        function stopStreaming() {
-            clearInterval(frameInterval);
-            streamActive = false;
+        const stopStream = () => {
+            cancelAnimationFrame(state.frameRequest);
+            state.socket?.close();
+            state.stream?.getTracks().forEach(track => track.stop());
             
-            if (socket) socket.close();
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                videoElement.srcObject = null;
-            }
-        }
+            state.active = false;
+            state.wsConnected = false;
+            state.frameRequest = 0;
+            video.srcObject = null;
+        };
 
-        startButton.addEventListener("click", startStreaming);
-        stopButton.addEventListener("click", stopStreaming);
+        // Event listeners
+        startBtn.addEventListener('click', startStream);
+        stopBtn.addEventListener('click', stopStream);
     </script>
 </body>
 </html>
