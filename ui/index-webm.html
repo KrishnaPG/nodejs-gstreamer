@@ -41,7 +41,7 @@
             }
             
             mediaSource = new MediaSource();
-            processedVideo.src = URL.createObjectURL(mediaSource);
+            processedVideo.src = URL.createObjectURL(mediaSource); // the processed video received from GStreamer
             
             return new Promise((resolve) => {
                 mediaSource.addEventListener('sourceopen', () => {
@@ -104,7 +104,7 @@
 
                 mediaRecorder.ondataavailable = (event) => {
                     if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-                        socket.send(event.data);
+                        socket.send(event.data); // send video feed to GStreamer via Websocket
                     }
                 };
 

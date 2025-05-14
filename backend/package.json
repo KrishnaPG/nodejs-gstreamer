@@ -1,15 +1,31 @@
 {
   "name": "backend",
+  "description": "Ultra-low latency video processing with GStreamer",
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "compile": "cmake-js compile --release",
+    "rebuild": "cmake-js rebuild --release",
+    "clean": "cmake-js clean"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.1"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
+    "cmake-js": "^7.3.1",
+    "node-addon-api": "^8.3.1",
     "uWebSockets.js": "uNetworking/uWebSockets.js#v20.52.0"
+  },
+  "binary": {
+    "napi_versions": [
+      9
+    ]
   }
 }
