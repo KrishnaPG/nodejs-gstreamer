@@ -1,7 +1,15 @@
-import { join } from "path";
+import path from "node:path";
 import { Transform } from "stream";
+import { fileURLToPath } from "url";
 
-const native = require(join(__dirname, "build", "Release", "gstzerocopy.node"));
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
+const __dirname = path.dirname(__filename); // get the name of the directory
+
+const native = require(process.env.NODE_ENV === "development"
+  ? path.resolve(__dirname, "build", "Debug", "gstzerocopy.node")
+  : path.resolve(__dirname, "build", "Release", "gstzerocopy.node"));
 
 export class GStreamerPipeline extends Transform {
   constructor(pipelineStr, callback) {

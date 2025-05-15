@@ -1,6 +1,6 @@
 // src/index.ts
 import { App } from "uWebSockets.js";
-import { GStreamerPipeline } from "./gstreamer-pipeline";
+import { GStreamerPipeline } from "./gstreamer-pipeline.js";
 
 //import { WASMGstBridge } from "./wasm-gst-bridge"; // Hypothetical bridge
 

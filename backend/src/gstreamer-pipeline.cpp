@@ -28,7 +28,7 @@ public:
     ~GStreamerPipeline();
 
 private:
-    static Napi::FunctionReference constructor;
+    inline static Napi::FunctionReference constructor;
     std::unique_ptr<GstResource> pipeline;
     std::unique_ptr<GstResource> appsrc;
     std::unique_ptr<GstResource> appsink;

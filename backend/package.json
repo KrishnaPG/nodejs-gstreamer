@@ -6,12 +6,16 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "compile": "cmake-js compile --release",
+    "build": "cmake-js compile --release",
+    "build:debug": "cmake-js compile --debug",
     "rebuild": "cmake-js rebuild --release",
-    "clean": "cmake-js clean"
+    "clean": "cmake-js clean",
+    "dev": "cross-env NODE_ENV=development DEBUG=* nodemon --trace-warnings --inspect-brk=9241 index.js"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "cross-env": "7.0.3",
+    "nodemon": "^3.1.10",
     "typescript": "^5.0.0",
     "ts-node": "^10.9.1"
   },
